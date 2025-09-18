@@ -23,6 +23,7 @@ from src.ocr import TextExtractor
 from src.translation import GeminiTranslator
 from src.image_processing import TextInpainter
 from src.text_rendering import TextRenderer
+from src.file_management import FileManager
 from dotenv import load_dotenv
 
 def adjust_ocr_languages(languages):
@@ -64,6 +65,9 @@ logger = logging.getLogger(__name__)
 
 # 環境変数の読み込み
 load_dotenv()
+
+# ファイル管理の初期化
+file_manager = FileManager(max_age_hours=24)
 
 # グローバル変数（セッション管理）
 processing_sessions = {}
@@ -357,6 +361,11 @@ if __name__ == '__main__':
     # 必要なフォルダの作成
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
+
+    # 起動時にクリーンアップを実行
+    logger.info("起動時クリーンアップを実行します...")
+    cleanup_result = file_manager.cleanup_old_files()
+    logger.info(f"クリーンアップ完了: {cleanup_result['deleted_sessions']} セッション削除, {cleanup_result['freed_space_mb']:.2f} MB 解放")
 
     # サーバーの起動
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
