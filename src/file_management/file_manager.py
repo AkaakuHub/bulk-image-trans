@@ -23,7 +23,8 @@ class FileManager:
         self.max_age_hours = max_age_hours
         self.uploads_dir = os.path.join(base_dir, 'uploads')
         self.output_dir = os.path.join(base_dir, 'output')
-        self.metadata_file = os.path.join(base_dir, 'file_metadata.json')
+        # メタデータファイルはベースディレクトリのdbディレクトリに保存
+        self.metadata_file = os.path.join(base_dir, 'db', 'file_metadata.json')
         self.logger = logging.getLogger(__name__)
 
         # メタデータファイルの読み込み
@@ -34,11 +35,37 @@ class FileManager:
         if os.path.exists(self.metadata_file):
             try:
                 with open(self.metadata_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                    metadata = json.load(f)
+                # 古いセッションをクリーンアップ
+                self._cleanup_old_sessions(metadata)
+                return metadata
             except Exception as e:
                 self.logger.error(f"メタデータ読み込みエラー: {e}")
                 return {}
         return {}
+
+    def _cleanup_old_sessions(self, metadata: Dict):
+        """メタデータから古いセッションを削除"""
+        cutoff_time = datetime.now() - timedelta(hours=self.max_age_hours)
+        sessions_to_remove = []
+
+        for session_id, session_data in metadata.items():
+            if 'created_at' in session_data:
+                try:
+                    created_at = datetime.fromisoformat(session_data['created_at'])
+                    if created_at < cutoff_time:
+                        sessions_to_remove.append(session_id)
+                except Exception as e:
+                    self.logger.warning(f"セッション {session_id} の日付解析エラー: {e}")
+                    sessions_to_remove.append(session_id)
+
+        # 古いセッションを削除
+        for session_id in sessions_to_remove:
+            del metadata[session_id]
+            self.logger.info(f"メタデータから古いセッションを削除: {session_id}")
+
+        if sessions_to_remove:
+            self._save_metadata()
 
     def _save_metadata(self):
         """メタデータを保存する"""

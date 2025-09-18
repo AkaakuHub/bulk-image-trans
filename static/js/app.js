@@ -11,32 +11,45 @@ class ImageTranslationApp {
     }
 
     initializeSocket() {
+        console.log('Initializing socket...');
+
         // Socket.IOの初期化
         this.socket = io();
 
         // 接続イベント
         this.socket.on('connect', () => {
+            console.log('Socket connected');
             this.addLog('サーバーに接続しました', 'success');
         });
 
         // 切断イベント
         this.socket.on('disconnect', () => {
+            console.log('Socket disconnected');
             this.addLog('サーバーから切断しました', 'warning');
+        });
+
+        // 接続エラー
+        this.socket.on('connect_error', (error) => {
+            console.error('Socket connection error:', error);
+            this.addLog('サーバー接続エラー', 'error');
         });
 
         // 進捗イベント
         this.socket.on('progress', (data) => {
+            console.log('Progress data:', data);
             this.updateProgress(data);
         });
 
         // エラーイベント
         this.socket.on('error', (data) => {
+            console.error('Socket error:', data);
             this.addLog(`エラー: ${data.message}`, 'error');
             this.stopProcessing();
         });
 
         // 処理完了イベント
         this.socket.on('processing_complete', (data) => {
+            console.log('Processing complete data:', data);
             this.addLog(data.message, 'success');
             this.showResults(data);
             this.stopProcessing();
@@ -44,26 +57,52 @@ class ImageTranslationApp {
     }
 
     bindEvents() {
+        console.log('Binding events...');
+
         // フォーム送信イベント
-        document.getElementById('settingsForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.startProcessing();
-        });
+        const settingsForm = document.getElementById('settingsForm');
+        if (settingsForm) {
+            settingsForm.addEventListener('submit', (e) => {
+                console.log('Form submitted');
+                e.preventDefault();
+                this.startProcessing();
+            });
+        } else {
+            console.error('Settings form not found');
+        }
 
         // キャンセルボタン
-        document.getElementById('cancelBtn').addEventListener('click', () => {
-            this.cancelProcessing();
-        });
+        const cancelBtn = document.getElementById('cancelBtn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => {
+                console.log('Cancel button clicked');
+                this.cancelProcessing();
+            });
+        } else {
+            console.error('Cancel button not found');
+        }
 
         // ログクリアボタン
-        document.getElementById('clearLogBtn').addEventListener('click', () => {
-            this.clearLog();
-        });
+        const clearLogBtn = document.getElementById('clearLogBtn');
+        if (clearLogBtn) {
+            clearLogBtn.addEventListener('click', () => {
+                console.log('Clear log button clicked');
+                this.clearLog();
+            });
+        } else {
+            console.error('Clear log button not found');
+        }
 
         // ファイル選択イベント
-        document.getElementById('fileInput').addEventListener('change', (e) => {
-            this.updateFileCount();
-        });
+        const fileInput = document.getElementById('fileInput');
+        if (fileInput) {
+            fileInput.addEventListener('change', (e) => {
+                console.log('File input changed');
+                this.updateFileCount();
+            });
+        } else {
+            console.error('File input not found');
+        }
     }
 
     updateFileCount() {
@@ -76,6 +115,8 @@ class ImageTranslationApp {
     }
 
     async startProcessing() {
+        console.log('startProcessing called');
+
         if (this.isProcessing) {
             this.addLog('既に処理中です', 'warning');
             return;
@@ -83,6 +124,7 @@ class ImageTranslationApp {
 
         const fileInput = document.getElementById('fileInput');
         const files = fileInput.files;
+        console.log('Selected files:', files);
 
         if (files.length === 0) {
             this.addLog('ファイルを選択してください', 'warning');
@@ -96,9 +138,15 @@ class ImageTranslationApp {
         }
 
         // 設定値の追加
-        formData.append('ocr_languages', document.getElementById('ocrLanguages').value);
-        formData.append('target_language', document.getElementById('targetLanguage').value);
-        formData.append('use_gpu', document.getElementById('useGpu').checked);
+        const ocrLang = document.getElementById('ocrLanguages').value;
+        const targetLang = document.getElementById('targetLanguage').value;
+        const useGpu = document.getElementById('useGpu').checked;
+
+        console.log('Settings:', {ocrLang, targetLang, useGpu});
+
+        formData.append('ocr_languages', ocrLang);
+        formData.append('target_language', targetLang);
+        formData.append('use_gpu', useGpu);
 
         try {
             this.isProcessing = true;
@@ -107,28 +155,35 @@ class ImageTranslationApp {
 
             this.addLog('ファイルをアップロード中...', 'info');
 
+            console.log('Sending request to /upload...');
             const response = await fetch('/upload', {
                 method: 'POST',
                 body: formData
             });
 
+            console.log('Response status:', response.status);
             const result = await response.json();
+            console.log('Response data:', result);
 
             if (response.ok) {
                 this.currentSessionId = result.session_id;
                 this.addLog(`${result.file_count}個のファイルをアップロードしました`, 'success');
+                console.log('Session ID set to:', this.currentSessionId);
             } else {
                 throw new Error(result.error || 'アップロードに失敗しました');
             }
 
         } catch (error) {
+            console.error('Upload error:', error);
             this.addLog(`アップロードエラー: ${error.message}`, 'error');
             this.stopProcessing();
         }
     }
 
     cancelProcessing() {
+        console.log('Cancel processing called');
         if (this.currentSessionId) {
+            console.log('Clearing session:', this.currentSessionId);
             // セッションをクリア（サーバー側で処理を停止）
             this.currentSessionId = null;
         }
@@ -140,6 +195,12 @@ class ImageTranslationApp {
         this.isProcessing = false;
         this.disableForm(false);
         document.getElementById('cancelBtn').disabled = true;
+
+        // 進捗パネルを非表示にする
+        const progressPanel = document.getElementById('progressPanel');
+        if (progressPanel) {
+            progressPanel.style.display = 'none';
+        }
     }
 
     showProgressPanel() {
@@ -186,35 +247,59 @@ class ImageTranslationApp {
         }
     }
 
-    async showResults(data) {
+    showResults(data) {
+        console.log('showResults called with data:', data);
+
         const resultsPanel = document.getElementById('resultsPanel');
         const resultsContainer = document.getElementById('resultsContainer');
 
+        console.log('Results panel element:', resultsPanel);
+        console.log('Results container element:', resultsContainer);
+        console.log('Results panel exists:', !!resultsPanel);
+        console.log('Results container exists:', !!resultsContainer);
+
+        if (!resultsPanel || !resultsContainer) {
+            console.error('Required DOM elements not found!');
+            this.addLog('DOM要素が見つかりません', 'error');
+            return;
+        }
+
         try {
-            // 結果ファイルの一覧を取得
-            const response = await fetch(`/output/${data.session_id}`);
-            const result = await response.json();
+            // コンテナをクリア
+            resultsContainer.innerHTML = '';
+            console.log('Cleared results container');
 
-            if (response.ok) {
-                resultsContainer.innerHTML = '';
+            // download_linksを使用して結果を表示
+            if (data.download_links && data.download_links.length > 0) {
+                console.log(`Processing ${data.download_links.length} files`);
 
-                if (result.files.length === 0) {
-                    resultsContainer.innerHTML = '<p class="text-muted">結果ファイルがありません</p>';
-                } else {
-                    result.files.forEach(file => {
-                        const resultItem = this.createResultItem(file);
-                        resultsContainer.appendChild(resultItem);
-                    });
-                }
+                data.download_links.forEach((file, index) => {
+                    console.log(`Creating result item ${index + 1}:`, file);
+                    const resultItem = this.createResultItem(file);
+                    console.log(`Created result item ${index + 1}:`, resultItem);
+                    resultsContainer.appendChild(resultItem);
+                    console.log(`Appended result item ${index + 1}`);
+                });
 
-                resultsPanel.style.display = 'block';
-                this.addLog(`${result.files.length}個の結果ファイルを生成しました`, 'success');
+                this.addLog(`${data.download_links.length}個の結果ファイルを生成しました`, 'success');
             } else {
-                throw new Error(result.error || '結果の取得に失敗しました');
+                console.log('No download_links found');
+                resultsContainer.innerHTML = '<p class="text-muted">結果ファイルがありません</p>';
+                this.addLog('結果ファイルがありません', 'warning');
             }
 
+            // パネルを表示
+            resultsPanel.style.display = 'block';
+            console.log('Results panel should now be visible');
+
+            // 最終的なDOM状態を確認
+            console.log('Final results container HTML:', resultsContainer.innerHTML.substring(0, 200) + '...');
+            console.log('Results panel display style:', resultsPanel.style.display);
+            console.log('Results container child count:', resultsContainer.children.length);
+
         } catch (error) {
-            this.addLog(`結果取得エラー: ${error.message}`, 'error');
+            console.error('Error in showResults:', error);
+            this.addLog(`結果表示エラー: ${error.message}`, 'error');
         }
     }
 
@@ -222,16 +307,32 @@ class ImageTranslationApp {
         const div = document.createElement('div');
         div.className = 'result-item';
 
-        const filename = file.name.replace('_translated', ' (翻訳済み)');
+        // オリジナル画像URLを構築（セッションIDから）
+        const sessionId = file.download_url.split('/')[2];
+        const originalImageUrl = `/uploads/${sessionId}/${file.original_name}`;
+        const translatedImageUrl = file.download_url;
+        const translatedFilename = file.original_name.replace(/\.[^/.]+$/, '') + ' (翻訳済み)' + file.original_name.match(/\.[^/.]+$/)[0];
 
         div.innerHTML = `
-            <img src="${file.url}" alt="${filename}" class="result-image" loading="lazy">
-            <div class="result-info">
-                <div class="result-filename">${filename}</div>
-                <div class="result-actions">
-                    <a href="${file.url}" download="${file.name}" class="btn-download">
-                        <i class="fas fa-download"></i> ダウンロード
-                    </a>
+            <div class="comparison-container">
+                <div class="image-pair">
+                    <div class="original-image">
+                        <div class="image-label">元の画像</div>
+                        <img src="${originalImageUrl}" alt="${file.original_name}" class="result-image" loading="lazy"
+                             onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'200\' height=\'150\'%3E%3Crect width=\'200\' height=\'150\' fill=\'%23f8f9fa\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%236c757d\'%3E画像が見つかりません%3C/text%3E%3C/svg%3E'">
+                    </div>
+                    <div class="translated-image">
+                        <div class="image-label">翻訳済み</div>
+                        <img src="${translatedImageUrl}" alt="${translatedFilename}" class="result-image" loading="lazy">
+                    </div>
+                </div>
+                <div class="result-info">
+                    <div class="result-filename">${translatedFilename}</div>
+                    <div class="result-actions">
+                        <a href="${translatedImageUrl}" download="${file.original_name}" class="btn-download">
+                            <i class="fas fa-download"></i> ダウンロード
+                        </a>
+                    </div>
                 </div>
             </div>
         `;
@@ -301,7 +402,13 @@ class ImageTranslationApp {
 
 // アプリケーションの初期化
 document.addEventListener('DOMContentLoaded', () => {
-    window.app = new ImageTranslationApp();
+    console.log('DOM loaded, initializing app...');
+    try {
+        window.app = new ImageTranslationApp();
+        console.log('App initialized successfully');
+    } catch (error) {
+        console.error('Error initializing app:', error);
+    }
 });
 
 // ページアンロード時のクリーンアップ

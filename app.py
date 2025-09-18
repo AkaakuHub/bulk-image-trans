@@ -67,7 +67,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # ファイル管理の初期化
-file_manager = FileManager(max_age_hours=24)
+file_manager = FileManager(base_dir='.', max_age_hours=24)
 
 # グローバル変数（セッション管理）
 processing_sessions = {}
@@ -241,14 +241,19 @@ def upload_files():
             'use_gpu': settings.get('use_gpu', 'true').lower() == 'true'
         }
 
-        # セッション情報の保存
-        processing_sessions[session_id] = {
+        # ファイルマネージャーにセッションを登録
+        session_data = {
+            'session_id': session_id,
             'files': uploaded_files,
             'settings': pipeline_settings,
             'output_folder': output_folder,
             'completed': 0,
             'total': len(uploaded_files)
         }
+        file_manager.register_session(session_id, uploaded_files, pipeline_settings)
+
+        # 互換性のためグローバル変数にも保存
+        processing_sessions[session_id] = session_data
 
         # バックグラウンドで処理を開始
         thread = threading.Thread(
@@ -305,11 +310,31 @@ def process_files_background(session_id):
 
             if success:
                 session['completed'] += 1
+                # ファイルマネージャーに完了ファイルを登録
+                original_name = file_info["original_name"]
+                name, ext = os.path.splitext(original_name)
+                output_filename = f"{name}_translated{ext}"
+                output_path = os.path.join(session['output_folder'], output_filename)
 
-        # 処理完了
+                if os.path.exists(output_path):
+                    file_manager.add_completed_file(session_id, original_name, output_path)
+
+        # セッション情報を更新
+        file_manager.update_session_status(session_id, 'completed')
+
+        # セッション情報を取得してダウンロードリンクを作成
+        session_info = file_manager.get_session_info(session_id)
+        download_links = []
+        if session_info and 'completed_files' in session_info:
+            download_links = session_info['completed_files']
+
+        # 処理完了（ダウンロードリンク付き）
+        logger.info(f"処理完了イベントを送信: session_id={session_id}, download_links={len(download_links)}件")
+        logger.info(f"ダウンロードリンク: {download_links}")
         socketio.emit('processing_complete', {
             'session_id': session_id,
             'message': f'処理完了: {session["completed"]}/{session["total"]}ファイル',
+            'download_links': download_links,
             'output_folder': f'/output/{session_id}'
         })
 
@@ -330,21 +355,56 @@ def download_file(session_id, filename):
         logger.error(f"ダウンロードエラー: {e}")
         return jsonify({'error': 'ファイルが見つかりません'}), 404
 
+@app.route('/uploads/<session_id>/<filename>')
+def serve_uploaded_file(session_id, filename):
+    """アップロードされた元ファイルの表示"""
+    try:
+        upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], session_id)
+        return send_from_directory(upload_folder, filename)
+    except Exception as e:
+        logger.error(f"元ファイル表示エラー: {e}")
+        return jsonify({'error': 'ファイルが見つかりません'}), 404
+
 @app.route('/output/<session_id>')
 def list_output_files(session_id):
-    """出力ファイルの一覧"""
+    """出力ファイルの一覧（メタデータ付き）"""
     try:
-        output_folder = os.path.join(app.config['OUTPUT_FOLDER'], session_id)
-        files = []
-        for filename in os.listdir(output_folder):
-            if filename.endswith('_translated.jpg') or filename.endswith('_translated.png'):
-                files.append({
-                    'name': filename,
-                    'url': f'/output/{session_id}/{filename}'
-                })
-        return jsonify({'files': files})
+        # ファイルマネージャーからセッション情報を取得
+        session_info = file_manager.get_session_info(session_id)
+        if session_info and 'completed_files' in session_info:
+            return jsonify({
+                'session_id': session_id,
+                'files': session_info['completed_files'],
+                'created_at': session_info.get('created_at'),
+                'settings': session_info.get('settings', {})
+            })
+        else:
+            return jsonify({'files': []})
     except Exception as e:
         logger.error(f"ファイル一覧エラー: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/session/<session_id>')
+def get_session_info(session_id):
+    """セッション情報を取得"""
+    try:
+        session_info = file_manager.get_session_info(session_id)
+        if session_info:
+            return jsonify(session_info)
+        else:
+            return jsonify({'error': 'Session not found'}), 404
+    except Exception as e:
+        logger.error(f"セッション情報取得エラー: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/sessions')
+def get_all_sessions():
+    """全てのセッション情報を取得"""
+    try:
+        sessions = file_manager.get_all_sessions()
+        return jsonify({'sessions': sessions})
+    except Exception as e:
+        logger.error(f"セッション一覧取得エラー: {e}")
         return jsonify({'error': str(e)}), 500
 
 @socketio.on('connect')
