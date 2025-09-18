@@ -2,10 +2,10 @@
 翻訳モジュール - Google Gemini APIを使用したテキスト翻訳機能
 """
 import google.generativeai as genai
-import time
 import os
 import logging
-from typing import List, Optional
+import json
+from typing import List, Optional, Dict, Any
 from dotenv import load_dotenv
 
 class GeminiTranslator:
@@ -37,10 +37,7 @@ class GeminiTranslator:
 
         self._initialize_model()
 
-        # レート制限設定
-        self.requests_per_minute_limit = 15  # Gemini 1.5 Flashの無料枠制限
-        self.delay_between_requests = 60 / self.requests_per_minute_limit + 1  # 余裕を持たせる
-
+  
     def _initialize_model(self):
         """Geminiモデルの初期化"""
         try:
@@ -88,123 +85,136 @@ class GeminiTranslator:
             self.logger.error(f"翻訳エラー ({text}): {e}")
             return text  # エラー時は原文を返す
 
-    def translate_texts(self, texts: List[str], target_language: str = "Japanese", source_language: str = None) -> List[str]:
+  
+    def bulk_translate_json(self, texts: List[str], target_language: str = "Japanese",
+                          source_language: str = None, contexts: List[str] = None) -> Dict[str, Any]:
         """
-        テキストのリストを翻訳（レート制限を考慮、リトライ機能付き）
+        バルク翻訳 - 1回のAPIコールで複数テキストを翻訳
 
         Args:
             texts: 翻訳するテキストのリスト
             target_language: 目的言語
-            source_language: ソース言語
+            source_language: ソース言語（オプション）
+            contexts: 各テキストのコンテキスト情報（オプション）
 
         Returns:
-            翻訳されたテキストのリスト
+            翻訳結果のJSON形式データ
         """
-        translations = []
+        if not texts:
+            return {
+                "request_type": "bulk_translation_response",
+                "translations": [],
+                "error": "No texts provided"
+            }
 
-        for i, text in enumerate(texts):
-            if not text.strip():
-                translations.append("")
-                continue
+        try:
+            # リクエストJSONの構築
+            request_data = {
+                "request_type": "bulk_translation",
+                "target_language": target_language,
+                "source_language": source_language,
+                "texts": []
+            }
 
+            for i, text in enumerate(texts):
+                text_item = {
+                    "id": i + 1,
+                    "text": text
+                }
+                if contexts and i < len(contexts):
+                    text_item["context"] = contexts[i]
+                request_data["texts"].append(text_item)
+
+            # プロンプトの作成（JSON形式でバルク翻訳を要求）
+            prompt = f"""あなたはプロの翻訳者です。以下のJSONデータに含まれるすべてのテキストを{target_language}に翻訳してください。
+コンテキスト情報を考慮して、一貫性のある翻訳を心がけてください。各テキストの文脈やニュアンスを保持しつつ、自然な{target_language}表現に翻訳してください。
+
+以下のJSON形式で応答してください:
+```json
+{{
+  "request_type": "bulk_translation_response",
+  "translations": [
+    {{
+      "id": 1,
+      "original_text": "元のテキスト",
+      "translated_text": "翻訳されたテキスト",
+      "confidence": 0.95
+    }}
+  ]
+}}
+```
+
+翻訳対象データ:
+```json
+{json.dumps(request_data, ensure_ascii=False)}
+```
+
+重要: 上記のJSON形式のみで応答してください。他の説明やテキストは含めないでください。"""
+
+            # バルク翻訳の実行
+            response = self.model.generate_content(prompt)
+            response_text = response.text.strip()
+
+            # JSONレスポンスのパース
             try:
-                # リトライ機能付きで翻訳実行
-                translated_text = self.translate_with_retry(text, target_language)
-                translations.append(translated_text)
+                # コードブロックを除去
+                if response_text.startswith("```json"):
+                    response_text = response_text[7:]
+                if response_text.endswith("```"):
+                    response_text = response_text[:-3]
 
-                # レート制限を回避するための待機
-                if i < len(texts) - 1:  # 最後の要素では待機しない
-                    time.sleep(self.delay_between_requests)
+                result_data = json.loads(response_text.strip())
 
-            except Exception as e:
-                self.logger.error(f"バッチ翻訳エラー (要素 {i}): {e}")
-                translations.append(text)  # エラー時は原文を返す
-
-        return translations
-
-    def translate_with_retry(self, text: str, target_language: str = "Japanese", max_retries: int = 3) -> str:
-        """
-        リトライ機能付き翻訳（原文が返ってきた場合もリトライ）
-
-        Args:
-            text: 翻訳するテキスト
-            target_language: 目的言語
-            max_retries: 最大リトライ回数
-
-        Returns:
-            翻訳されたテキスト
-        """
-        for attempt in range(max_retries):
-            try:
-                translated_text = self.translate_text(text, target_language)
-
-                # 翻訳結果が原文と同じ場合（失敗と判断）
-                # TODO: 中国語の単語など、翻訳しても同じになる場合があるので一時的に無効化
-                if False and translated_text.strip() == text.strip() and text.strip():
-                    self.logger.warning(f"翻訳結果が原文と同じです (試行 {attempt + 1}/{max_retries}): '{text}'")
-                    if attempt < max_retries - 1:
-                        # 指数バックオフ
-                        wait_time = (2 ** attempt) * self.delay_between_requests
-                        self.logger.info(f"{wait_time:.1f}秒後に再試行します...")
-                        time.sleep(wait_time)
-                        continue
-                    else:
-                        self.logger.error(f"最大リトライ回数に達しましたが翻訳できませんでした: {text}")
-                        return text  # 最終的に原文を返す
+                # レスポンス形式の検証
+                if result_data.get("request_type") == "bulk_translation_response":
+                    self.logger.info(f"バルク翻訳成功: {len(result_data.get('translations', []))}件")
+                    return result_data
                 else:
-                    # 成功した場合
-                    if attempt > 0:  # リトライして成功した場合
-                        self.logger.info(f"リトライ成功 (試行 {attempt + 1}): '{text}' -> '{translated_text}'")
-                    return translated_text
+                    self.logger.error(f"予期しないレスポンス形式: {result_data}")
+                    return {
+                        "request_type": "bulk_translation_response",
+                        "translations": [],
+                        "error": "Response format error"
+                    }
 
-            except Exception as e:
-                self.logger.warning(f"翻訳失敗 (試行 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    # 指数バックオフ
-                    wait_time = (2 ** attempt) * self.delay_between_requests
-                    self.logger.info(f"{wait_time:.1f}秒後に再試行します...")
-                    time.sleep(wait_time)
-                else:
-                    self.logger.error(f"最大リトライ回数に達しました: {text}")
-                    return text  # 最終的に原文を返す
+            except json.JSONDecodeError as e:
+                self.logger.error(f"JSONパースエラー: {e}")
+                self.logger.error(f"レスポンステキスト: {response_text}")
+                return {
+                    "request_type": "bulk_translation_response",
+                    "translations": [],
+                    "error": "JSON parse error"
+                }
 
-    def batch_translate_with_progress(self, texts: List[str], target_language: str = "Japanese",
-                                   progress_callback=None) -> List[str]:
+        except Exception as e:
+            self.logger.error(f"バルク翻訳エラー: {e}")
+            return {
+                "request_type": "bulk_translation_response",
+                "translations": [],
+                "error": str(e)
+            }
+
+  
+    def bulk_translate_simple(self, texts: List[str], target_language: str = "Japanese") -> List[str]:
         """
-        進捗コールバック機能付きバッチ翻訳
+        シンプルなバルク翻訳 - テキストリストを受け取り翻訳リストを返す
 
         Args:
             texts: 翻訳するテキストのリスト
             target_language: 目的言語
-            progress_callback: 進捗報告用コールバック関数 (current, total)
 
         Returns:
             翻訳されたテキストのリスト
         """
-        total = len(texts)
-        translations = []
+        result = self.bulk_translate_json(texts, target_language)
 
-        for i, text in enumerate(texts):
-            if progress_callback:
-                progress_callback(i + 1, total)
-
-            if not text.strip():
-                translations.append("")
-                continue
-
-            try:
-                translated_text = self.translate_with_retry(text, target_language)
-                translations.append(translated_text)
-
-                # レート制限対応
-                if i < total - 1:
-                    time.sleep(self.delay_between_requests)
-
-            except Exception as e:
-                self.logger.error(f"バッチ翻訳エラー (要素 {i}): {e}")
-                translations.append(text)
-
-        return translations
+        if result.get("translations"):
+            # ID順に翻訳結果をソートして返す
+            sorted_translations = sorted(result["translations"], key=lambda x: x["id"])
+            return [t["translated_text"] for t in sorted_translations]
+        else:
+            # エラー時は原文を返す
+            return texts
 
 
 def create_translator(api_key: str = None) -> GeminiTranslator:

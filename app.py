@@ -119,12 +119,22 @@ class ImageTranslationPipeline:
                 'progress': 25
             })
 
-            # 2. 翻訳
+            # 2. 翻訳（バルク処理）
             original_texts = [item['text'] for item in extracted_texts]
-            translated_texts = self.translator.translate_texts(
+            # コンテキスト情報として各テキストの位置情報を渡す
+            contexts = [f"位置: ({item['bbox'][0]}, {item['bbox'][1]}) サイズ: {item['bbox'][2]}x{item['bbox'][3]}" for item in extracted_texts]
+
+            # バルク翻訳を実行
+            bulk_result = self.translator.bulk_translate_json(
                 original_texts,
-                target_language=self.settings['target_language']
+                target_language=self.settings['target_language'],
+                contexts=contexts
             )
+
+            # 翻訳結果を抽出
+            sorted_translations = sorted(bulk_result['translations'], key=lambda x: x['id'])
+            translated_texts = [t['translated_text'] for t in sorted_translations]
+            self.logger.info(f"バルク翻訳成功: {len(translated_texts)}件のテキストを翻訳")
 
             socketio.emit('progress', {
                 'session_id': session_id,
