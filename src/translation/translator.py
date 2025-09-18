@@ -67,17 +67,21 @@ class GeminiTranslator:
             return ""
 
         try:
-            # プロンプトの作成
+            # プロンプトの作成（より明確な指示）
             if source_language:
-                prompt = f"Translate the following {source_language} text to {target_language}. Do not add any extra explanation or context, just return the translated text: \"{text}\""
+                # prompt = f"Translate the following {source_language} text to {target_language}. Return ONLY the translated text, nothing else. If the text is already in {target_language}, translate it again: \"{text}\""
+                prompt = f"あなたは、{source_language}から{target_language}への翻訳者です。以下のテキストを必ず{target_language}に翻訳してください。翻訳結果のみを返してください。他の情報は一切含めないでください。もしテキストが既に{target_language}で書かれている場合でも、再度翻訳してください: \"{text}\""
             else:
-                prompt = f"Translate the following text to {target_language}. Do not add any extra explanation or context, just return the translated text: \"{text}\""
+                # prompt = f"Translate the following text to {target_language}. Return ONLY the translated text, nothing else. If the text is already in {target_language}, translate it again: \"{text}\""
+                prompt = f"あなたは、任意の言語から{target_language}への翻訳者です。以下のテキストを必ず{target_language}に翻訳してください。翻訳結果のみを返してください。他の情報は一切含めないでください。もしテキストが既に{target_language}で書かれている場合でも、再度翻訳してください: \"{text}\""
 
             # 翻訳実行
             response = self.model.generate_content(prompt)
             translated_text = response.text.strip()
 
-            self.logger.debug(f"原文: {text} -> 翻訳: {translated_text}")
+            # デバッグログ
+            self.logger.info(f"翻訳結果: '{text}' -> '{translated_text}'")
+
             return translated_text
 
         except Exception as e:
@@ -86,7 +90,7 @@ class GeminiTranslator:
 
     def translate_texts(self, texts: List[str], target_language: str = "Japanese", source_language: str = None) -> List[str]:
         """
-        テキストのリストを翻訳（レート制限を考慮）
+        テキストのリストを翻訳（レート制限を考慮、リトライ機能付き）
 
         Args:
             texts: 翻訳するテキストのリスト
@@ -104,8 +108,8 @@ class GeminiTranslator:
                 continue
 
             try:
-                # 翻訳実行
-                translated_text = self.translate_text(text, target_language, source_language)
+                # リトライ機能付きで翻訳実行
+                translated_text = self.translate_with_retry(text, target_language)
                 translations.append(translated_text)
 
                 # レート制限を回避するための待機
@@ -120,7 +124,7 @@ class GeminiTranslator:
 
     def translate_with_retry(self, text: str, target_language: str = "Japanese", max_retries: int = 3) -> str:
         """
-        リトライ機能付き翻訳
+        リトライ機能付き翻訳（原文が返ってきた場合もリトライ）
 
         Args:
             text: 翻訳するテキスト
@@ -132,7 +136,27 @@ class GeminiTranslator:
         """
         for attempt in range(max_retries):
             try:
-                return self.translate_text(text, target_language)
+                translated_text = self.translate_text(text, target_language)
+
+                # 翻訳結果が原文と同じ場合（失敗と判断）
+                # TODO: 中国語の単語など、翻訳しても同じになる場合があるので一時的に無効化
+                if False and translated_text.strip() == text.strip() and text.strip():
+                    self.logger.warning(f"翻訳結果が原文と同じです (試行 {attempt + 1}/{max_retries}): '{text}'")
+                    if attempt < max_retries - 1:
+                        # 指数バックオフ
+                        wait_time = (2 ** attempt) * self.delay_between_requests
+                        self.logger.info(f"{wait_time:.1f}秒後に再試行します...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        self.logger.error(f"最大リトライ回数に達しましたが翻訳できませんでした: {text}")
+                        return text  # 最終的に原文を返す
+                else:
+                    # 成功した場合
+                    if attempt > 0:  # リトライして成功した場合
+                        self.logger.info(f"リトライ成功 (試行 {attempt + 1}): '{text}' -> '{translated_text}'")
+                    return translated_text
+
             except Exception as e:
                 self.logger.warning(f"翻訳失敗 (試行 {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
