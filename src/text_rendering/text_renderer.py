@@ -310,7 +310,7 @@ class TextRenderer:
     def render_text_centered(self, image: np.ndarray, text: str, bbox: List[List[int]],
                            color: Tuple[int, int, int] = None) -> np.ndarray:
         """
-        バウンディングボックスの中央にテキストを描画
+        バウンディングボックスの左上からテキストを描画（元のテキスト位置に合わせる）
 
         Args:
             image: 入力画像
@@ -322,18 +322,22 @@ class TextRenderer:
             テキストが描画された画像
         """
         try:
-            # バウンディングボックスの中心を計算
+            # バウンディングボックスの左上座標を計算
             points = np.array(bbox, dtype=np.int32)
-            center_x = int(np.mean(points[:, 0]))
-            center_y = int(np.mean(points[:, 1]))
+            x_coords = points[:, 0]
+            y_coords = points[:, 1]
 
-            # 自動フィットで描画
-            result = self.render_text(image, text, (center_x, center_y), bbox, color)
+            # 左上座標を取得（若干のマージンを加える）
+            top_left_x = int(np.min(x_coords)) + 2
+            top_left_y = int(np.min(y_coords)) + 2
+
+            # 左上から描画
+            result = self.render_text(image, text, (top_left_x, top_left_y), bbox, color)
 
             return result
 
         except Exception as e:
-            self.logger.error(f"中央揃え描画エラー: {e}")
+            self.logger.error(f"テキスト描画エラー: {e}")
             return image.copy()
 
     def batch_render_text(self, image: np.ndarray, text_data: List[Dict[str, Any]]) -> np.ndarray:
