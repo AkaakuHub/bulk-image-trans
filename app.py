@@ -25,6 +25,25 @@ from src.image_processing import TextInpainter
 from src.text_rendering import TextRenderer
 from dotenv import load_dotenv
 
+def adjust_ocr_languages(languages):
+    """
+    EasyOCRの制限に合わせて言語組み合わせを調整
+    入力: 中国語または英語のみ
+    """
+    # 中国語が含まれる場合は英語を追加
+    if any(lang in ['ch_sim', 'ch_tra'] for lang in languages):
+        if 'ch_sim' in languages:
+            return ['ch_sim', 'en']
+        elif 'ch_tra' in languages:
+            return ['ch_tra', 'en']
+
+    # 英語のみの場合
+    if 'en' in languages:
+        return ['en']
+
+    # その他の場合はそのまま返す
+    return languages
+
 # 設定
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
@@ -196,26 +215,21 @@ def upload_files():
                     'path': file_path
                 })
 
-        # 設定の取得と言語コードのマッピング
-        raw_languages = [lang.strip() for lang in settings.get('ocr_languages', 'en,ja').split(',')]
+        # 設定の取得（中国語または英語単体のみ）
+        raw_language = settings.get('ocr_languages', 'en').split(',')[0].strip()
 
         # 言語コードをEasyOCR対応に変換
         language_mapping = {
             'chinese': 'ch_sim',
             'zh': 'ch_sim',
-            'japanese': 'ja',
-            'ja': 'ja',
             'english': 'en',
             'en': 'en'
         }
 
-        ocr_languages = []
-        for lang in raw_languages:
-            if lang.lower() in language_mapping:
-                ocr_languages.append(language_mapping[lang.lower()])
-            else:
-                # マッピングにない場合はそのまま使用（en, jaなど）
-                ocr_languages.append(lang)
+        ocr_language = language_mapping.get(raw_language.lower(), raw_language)
+
+        # EasyOCRの制限に合わせて言語組み合わせを調整
+        ocr_languages = adjust_ocr_languages([ocr_language])
 
         pipeline_settings = {
             'ocr_languages': ocr_languages,

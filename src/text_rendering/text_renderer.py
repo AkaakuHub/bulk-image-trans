@@ -58,7 +58,7 @@ class TextRenderer:
 
     def wrap_text(self, text: str, max_width: int, font: ImageFont.FreeTypeFont = None) -> List[str]:
         """
-        テキストを指定幅に合わせて折り返す
+        テキストを指定幅に合わせて折り返す（日本語対応）
 
         Args:
             text: 折り返すテキスト
@@ -72,26 +72,28 @@ class TextRenderer:
             font = self.font
 
         lines = []
-        words = text.split(' ')
-
         current_line = ""
-        for word in words:
-            test_line = current_line + (" " if current_line else "") + word
-            # テキスト幅を計算
+
+        # 1文字ずつ処理
+        for char in text:
+            # 現在の行に文字を追加した場合の幅を計算
+            test_line = current_line + char
             bbox = font.getbbox(test_line)
             text_width = bbox[2] - bbox[0]
 
             if text_width <= max_width:
                 current_line = test_line
             else:
+                # 幅を超える場合は現在の行を確定して新しい行を開始
                 if current_line:
                     lines.append(current_line)
-                    current_line = word
+                    current_line = char
                 else:
-                    # 1単語でも幅を超える場合
-                    lines.append(word)
+                    # 1文字で幅を超える場合（非常に小さいmax_width）
+                    lines.append(char)
                     current_line = ""
 
+        # 最後の行を追加
         if current_line:
             lines.append(current_line)
 
