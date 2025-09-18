@@ -205,18 +205,21 @@ class TextRenderer:
             self.logger.error(f"色抽出エラー: {e}")
             return (0, 0, 0)  # デフォルト: 黒
 
-    def render_text(self, image: np.ndarray, text: str, position: Tuple[int, int],
-                   bbox: List[List[int]], color: Tuple[int, int, int] = None,
-                   font_size: int = None, auto_fit: bool = True) -> np.ndarray:
+    def render_text_with_outline(self, image: np.ndarray, text: str, position: Tuple[int, int],
+                              bbox: List[List[int]], text_color: Tuple[int, int, int] = (0, 0, 0),
+                              outline_color: Tuple[int, int, int] = (255, 255, 255),
+                              outline_width: int = 2, font_size: int = None, auto_fit: bool = True) -> np.ndarray:
         """
-        画像にテキストを描画
+        縁取り付きテキストを描画
 
         Args:
             image: 入力画像
             text: 描画するテキスト
             position: 描画位置 (x, y)
             bbox: バウンディングボックス（自動フィット用）
-            color: テキスト色 (R, G, B)
+            text_color: テキスト色 (R, G, B)
+            outline_color: 縁取り色 (R, G, B)
+            outline_width: 縁取りの太さ
             font_size: フォントサイズ
             auto_fit: 自動サイズ調整を行うかどうか
 
@@ -228,21 +231,17 @@ class TextRenderer:
             pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
             draw = ImageDraw.Draw(pil_image)
 
-            # 色の設定
-            if color is None:
-                color = self.extract_dominant_color(image, bbox)
-            else:
-                color = tuple(reversed(color))  # BGRからRGBに変換
+            # バウンディングボックスの寸法を計算
+            points = np.array(bbox, dtype=np.int32)
+            x_coords = points[:, 0]
+            y_coords = points[:, 1]
+            bbox_width = np.max(x_coords) - np.min(x_coords)
+            bbox_height = np.max(y_coords) - np.min(y_coords)
 
             # フォントサイズの設定
             if auto_fit:
-                # バウンディングボックスの寸法を計算
-                points = np.array(bbox, dtype=np.int32)
-                x_coords = points[:, 0]
-                y_coords = points[:, 1]
-                target_width = np.max(x_coords) - np.min(x_coords) - 10  # 余白
-                target_height = np.max(y_coords) - np.min(y_coords) - 10
-
+                target_width = bbox_width - outline_width * 2  # 縁取り分の余白
+                target_height = bbox_height - outline_width * 2
                 font_size = self.find_optimal_font_size(text, target_width, target_height)
 
             # フォントの設定
@@ -251,30 +250,60 @@ class TextRenderer:
 
             # テキストの折り返し
             if auto_fit:
-                points = np.array(bbox, dtype=np.int32)
-                x_coords = points[:, 0]
-                target_width = np.max(x_coords) - np.min(x_coords) - 10
+                target_width = bbox_width - outline_width * 2
                 lines = self.wrap_text(text, target_width, self.font)
             else:
                 lines = [text]
 
-            # テキスト描画
+            # 縁取りテキスト描画
             y_offset = 0
             for line in lines:
+                # 縁取りを描画（8方向にオフセットして描画）
+                for dx in [-outline_width, 0, outline_width]:
+                    for dy in [-outline_width, 0, outline_width]:
+                        if dx == 0 and dy == 0:
+                            continue  # 中心はスキップ
+                        draw.text((position[0] + dx, position[1] + y_offset + dy), line,
+                                 fill=outline_color, font=self.font)
+
+                # メインのテキストを描画
                 draw.text((position[0], position[1] + y_offset), line,
-                         fill=color, font=self.font)
+                         fill=text_color, font=self.font)
 
                 # 行間を計算
                 line_height = self.calculate_text_dimensions(line, self.font)[1]
-                y_offset += line_height + 2  # 少しの行間
+                y_offset += line_height + 1  # 少しの行間
 
             # numpy配列に戻す
             result = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
             return result
 
         except Exception as e:
-            self.logger.error(f"テキスト描画エラー: {e}")
+            self.logger.error(f"縁取りテキスト描画エラー: {e}")
             return image.copy()
+
+    def render_text(self, image: np.ndarray, text: str, position: Tuple[int, int],
+                   bbox: List[List[int]], color: Tuple[int, int, int] = None,
+                   font_size: int = None, auto_fit: bool = True) -> np.ndarray:
+        """
+        画像にテキストを描画（縁取り付き）
+
+        Args:
+            image: 入力画像
+            text: 描画するテキスト
+            position: 描画位置 (x, y)
+            bbox: バウンディングボックス（自動フィット用）
+            color: テキスト色 (R, G, B) - Noneの場合は黒
+            font_size: フォントサイズ
+            auto_fit: 自動サイズ調整を行うかどうか
+
+        Returns:
+            テキストが描画された画像
+        """
+        # 黒いテキストに白い縁取りで描画
+        text_color = (0, 0, 0)  # 黒
+        outline_color = (255, 255, 255)  # 白
+        return self.render_text_with_outline(image, text, position, bbox, text_color, outline_color, 2, font_size, auto_fit)
 
     def render_text_centered(self, image: np.ndarray, text: str, bbox: List[List[int]],
                            color: Tuple[int, int, int] = None) -> np.ndarray:

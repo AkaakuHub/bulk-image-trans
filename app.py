@@ -196,9 +196,29 @@ def upload_files():
                     'path': file_path
                 })
 
-        # 設定の取得
+        # 設定の取得と言語コードのマッピング
+        raw_languages = [lang.strip() for lang in settings.get('ocr_languages', 'en,ja').split(',')]
+
+        # 言語コードをEasyOCR対応に変換
+        language_mapping = {
+            'chinese': 'ch_sim',
+            'zh': 'ch_sim',
+            'japanese': 'ja',
+            'ja': 'ja',
+            'english': 'en',
+            'en': 'en'
+        }
+
+        ocr_languages = []
+        for lang in raw_languages:
+            if lang.lower() in language_mapping:
+                ocr_languages.append(language_mapping[lang.lower()])
+            else:
+                # マッピングにない場合はそのまま使用（en, jaなど）
+                ocr_languages.append(lang)
+
         pipeline_settings = {
-            'ocr_languages': [lang.strip() for lang in settings.get('ocr_languages', 'en,ja').split(',')],
+            'ocr_languages': ocr_languages,
             'target_language': settings.get('target_language', 'Japanese'),
             'use_gpu': settings.get('use_gpu', 'true').lower() == 'true'
         }

@@ -51,3 +51,4 @@ output/
 *.log
 
 uploads/
+test/debug
