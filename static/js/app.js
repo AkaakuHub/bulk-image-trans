@@ -8,6 +8,7 @@ class ImageTranslationApp {
 
         this.initializeSocket();
         this.bindEvents();
+        this.initializeModalEvents();
     }
 
     initializeSocket() {
@@ -319,11 +320,13 @@ class ImageTranslationApp {
                     <div class="original-image">
                         <div class="image-label">元の画像</div>
                         <img src="${originalImageUrl}" alt="${file.original_name}" class="result-image" loading="lazy"
-                             onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'200\' height=\'150\'%3E%3Crect width=\'200\' height=\'150\' fill=\'%23f8f9fa\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%236c757d\'%3E画像が見つかりません%3C/text%3E%3C/svg%3E'">
+                             onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'200\' height=\'150\'%3E%3Crect width=\'200\' height=\'150\' fill=\'%23f8f9fa\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%236c757d\'%3E画像が見つかりません%3C/text%3E%3C/svg%3E'"
+                             data-caption="元の画像: ${file.original_name}">
                     </div>
                     <div class="translated-image">
                         <div class="image-label">翻訳済み</div>
-                        <img src="${translatedImageUrl}" alt="${translatedFilename}" class="result-image" loading="lazy">
+                        <img src="${translatedImageUrl}" alt="${translatedFilename}" class="result-image" loading="lazy"
+                             data-caption="翻訳済み: ${translatedFilename}">
                     </div>
                 </div>
                 <div class="result-info">
@@ -336,6 +339,12 @@ class ImageTranslationApp {
                 </div>
             </div>
         `;
+
+        // 画像クリックイベントを追加
+        const images = div.querySelectorAll('.result-image');
+        images.forEach(img => {
+            img.addEventListener('click', () => this.showImageModal(img));
+        });
 
         return div;
     }
@@ -397,6 +406,51 @@ class ImageTranslationApp {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    showImageModal(img) {
+        const modal = document.getElementById('imageModal');
+        const modalImg = document.getElementById('modalImage');
+        const modalCaption = document.getElementById('modalCaption');
+
+        // モーダルに画像を設定
+        modalImg.src = img.src;
+        modalCaption.textContent = img.dataset.caption || img.alt;
+
+        // モーダルを表示
+        modal.style.display = 'block';
+        document.body.style.overflow = 'hidden'; // 背景スクロールを防止
+
+        // モーダル外クリックで閉じる処理
+        const closeOnOutsideClick = (e) => {
+            if (e.target === modal) {
+                this.hideImageModal();
+                modal.removeEventListener('click', closeOnOutsideClick);
+            }
+        };
+        modal.addEventListener('click', closeOnOutsideClick);
+    }
+
+    hideImageModal() {
+        const modal = document.getElementById('imageModal');
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto'; // 背景スクロールを再開
+    }
+
+    // モーダル関連のイベントリスナーを初期化メソッドに追加
+    initializeModalEvents() {
+        const modal = document.getElementById('imageModal');
+        const closeBtn = modal.querySelector('.modal-close');
+
+        // 閉じるボタンのクリックイベント
+        closeBtn.addEventListener('click', () => this.hideImageModal());
+
+        // ESCキーでモーダルを閉じる
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && modal.style.display === 'block') {
+                this.hideImageModal();
+            }
+        });
     }
 }
 
