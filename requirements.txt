@@ -1,0 +1,30 @@
+# Core ML/CV libraries
+torch
+torchvision
+torchaudio
+easyocr
+opencv-python-headless
+numpy
+
+# Image processing and text rendering
+Pillow
+
+# Translation API
+google-generativeai
+
+# Machine learning for color analysis
+scikit-learn
+
+# Environment variable management
+python-dotenv
+
+# Web framework
+Flask
+Flask-SocketIO
+python-socketio
+
+# File handling
+werkzeug
+
+# CORS support
+flask-cors
